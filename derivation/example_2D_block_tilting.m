@@ -1,128 +1,125 @@
-clear;clc;
-addpath generated
+% object frame is set on the line contact between object and the table
+function [n_av, n_af, R_a, w_v, force_force] = example_2D_block_tilting(inputs)
+% clear;clc;
+
+addpath ../derivation/generated
+
 
 % weight
-kObjectMass = 1.0;
-kHandMass = 2.0;
+kObjectMass = 0.5;
+kHandMass = 0.3;
 kGravityConstant = 9.8;
 
-% geometry
-kObjectRadius = 0.04;
-kObjectLength = 0.2;
-kTableZ = 0.360;  % project rotation axis to this height to avoid ossilation
 
 % friction
 kFrictionCoefficientTable = 0.8;
-kFrictionCoefficientHand = 1.2;
-kPointsPerFaceContact = 4;  % contact points between object and hand
+kFrictionCoefficientHand = 0.8;
 kFrictionConeSides = 6;  % polyhedron approximation of friction cone
 v_friction_directions = zeros(3, kFrictionConeSides);
-kMinNormalForce = 0.5; % Newton
+kMinNormalForce = 10; % Newton
 
 % inputs
-p_WH = [0 0 0.5]';
-q_WH = aa2quat(0.2, [1 0 0]');
-kGoalVelocity = 0.5; % rad
+if nargin == 0
+    kObjectEdgeLength = 0.075;
+    p_WH = [0.4*kObjectEdgeLength, 0, kObjectEdgeLength]';
+    kGoalVelocity = 0.5; % rad
+    kTiltDirection = [1 0 0]';
+    m_project = diag([1 0 1]);
 
+    % initial poses
+    p_WH0 = [0.4*kObjectEdgeLength, 0, kObjectEdgeLength]';
+    p_WO0 = [kObjectEdgeLength/2, 0, 0]';
+
+else
+    p_WH = inputs.p_WH;
+
+    kObjectEdgeLength = inputs.ObjectEdgeLength;
+    kGoalVelocity     = inputs.GoalVelocity;
+    kTiltDirection    = inputs.TiltDirection;
+    m_project         = inputs.m_project;
+    p_WH0             = inputs.p_WH0;
+    p_WO0             = inputs.p_WO0;
+end
+kRotateAxis = cross([0 0 1]', kTiltDirection); % to the left
+p_LineContact = p_WO0;
+p_WO = p_WO0;
+v_C2C0 = p_WH0 - p_LineContact;
+q_WO = quatBTVec(m_project*v_C2C0, m_project*(p_WH - p_WO));
+
+
+q = [p_WO; q_WO; p_WH];
+disp('Input q: ');
+disp(q);
 
 % ------------------------------------------------------------------
-kDimGeneralized = 12;
+% Generalized velocity: object body twist, hand linear velocity in world frame
+kDimGeneralized = 9;
 kDimUnActualized = 6;
-kDimActualized = 6;
-kDimLambda = 3*(1+kPointsPerFaceContact);
+kDimActualized = 3;
+kDimLambda = 3*(1+2);
 
 for i = 1:kFrictionConeSides
     v_friction_directions(1, i) = sin(2*pi*i/kFrictionConeSides);
     v_friction_directions(2, i) = cos(2*pi*i/kFrictionConeSides);
 end
-% origin of object frame is at the center of its bottom
-% origin of gripper frame is at the center of palm flange surface
-p_OHC_all = zeros(3, kPointsPerFaceContact);
-for i = 1:kPointsPerFaceContact
-    p_OHC_all(1, i) = kObjectRadius*sin(2*pi*i/kPointsPerFaceContact);
-    p_OHC_all(2, i) = kObjectRadius*cos(2*pi*i/kPointsPerFaceContact);
-    p_OHC_all(3, i) = kObjectLength;
-end
-p_HHC_all = p_OHC_all;
-p_HHC_all(3, :) = 0;
+
+p_OHC = p_WH0 - p_WO0;
+% p_HHC = [0, 0, 0]';
 
 % object pose
-p_WO = p_WH - quatOnVec([0 0 1]', q_WH)*kObjectLength;
-q_WO = q_WH;
-q = [p_WO; q_WO; p_WH; q_WH];
-disp('Input q: ');
-disp(q);
-
 R_WO = quat2m(q_WO);
-R_WH = quat2m(q_WH);
 E_qO = 0.5*[-q_WO(2) -q_WO(3) -q_WO(4);
-			q_WO(1) -q_WO(4) q_WO(3);
-			q_WO(4) q_WO(1) -q_WO(2);
-			-q_WO(3) q_WO(2) q_WO(1)];
-E_qH = 0.5*[-q_WH(2) -q_WH(3) -q_WH(4);
-			q_WH(1) -q_WH(4) q_WH(3);
-			q_WH(4) q_WH(1) -q_WH(2);
-			-q_WH(3) q_WH(2) q_WH(1)];
-Omega = blkdiag(R_WO, E_qO, R_WH, E_qH);
+            q_WO(1) -q_WO(4) q_WO(3);
+            q_WO(4) q_WO(1) -q_WO(2);
+            -q_WO(3) q_WO(2) q_WO(1)];
+Omega = blkdiag(R_WO, E_qO, eye(3));
 
 % contact point with table
-p_Wtemp = quatOnVec([0 0 1]', q_WO);
-p_Wtemp(3) = 0;
-p_Otemp = R_WO'*p_Wtemp;
-p_Otemp(3) = 0;
-p_OTC = p_Otemp/norm(p_Otemp)*kObjectRadius; % table contact
-p_WTC = R_WO*p_OTC + p_WO;
-% p_WTC(3) = kTableZ;
-
-% rotation axis on the table
-v_WRotAxis = R_WO*p_Otemp;
-v_WRotAxis(3) = 0;
-v_WRotAxis = v_WRotAxis/norm(v_WRotAxis);
+p_OTC_all = [kRotateAxis*kObjectEdgeLength/2, -kRotateAxis*kObjectEdgeLength/2];
+p_WTC_all = R_WO*p_OTC_all + p_WO*[1, 1];
 
 % goal twist
-t_WG = [-cross(v_WRotAxis, p_WTC); v_WRotAxis]*kGoalVelocity;
+t_WG = [-cross(kRotateAxis, p_LineContact); kRotateAxis]*kGoalVelocity;
 Adj_g_WO_inv = [R_WO', -R_WO'*wedge(p_WO); zeros(3), R_WO'];
 
 t_OG = Adj_g_WO_inv*t_WG;
 
-G = [eye(6) zeros(6)];
+G = [eye(6) zeros(6, 3)];
 b_G = t_OG;
 
 % Holonomic constraints
-Jac_phi_q = jac_phi_q(p_WO, q_WO, p_WH, q_WH, p_OTC, p_WTC, ...
-        p_OHC_all, p_HHC_all);
+Jac_phi_q = jac_phi_q_2D_block_tilting(p_WO, q_WO, p_WH, p_OHC, p_WTC_all, p_OTC_all);
 
 % external force
 F_WGO = [0 0 -kObjectMass*kGravityConstant]';
 F_WGH = [0 0 -kHandMass*kGravityConstant]';
-F = [R_WO'*F_WGO; zeros(3,1); R_WH'*F_WGH; zeros(3,1)];
+F = [R_WO'*F_WGO; zeros(3,1); F_WGH];
 
 % newton's third law
-H = [zeros(6, 3*(1+kPointsPerFaceContact)), eye(6), zeros(6)];
+H = [zeros(6, 3*(1+2)), eye(6), zeros(6, 3)];
 
 % Artificial constraints
-A = zeros(kFrictionConeSides*(1+kPointsPerFaceContact)+kPointsPerFaceContact, ...
-        3*(1+kPointsPerFaceContact)+12);
+%   hand contact is sticking; (force is in world frame)
+%   table contacts are sticking;
+%   hand contact normal force lower bound
+A = zeros(kFrictionConeSides*(1+2)+1, ...
+        3*(1+2)+9);
 z = [0 0 1]';
 for i=1:kFrictionConeSides
-    A(i, 1:3) = v_friction_directions(:, i)' - kFrictionCoefficientTable*z';
-    for j=1:kPointsPerFaceContact
-        A(j*kFrictionConeSides+i, j*3+1:j*3+3) = ...
-                v_friction_directions(:, i)' - kFrictionCoefficientHand*z';
-    end
+    A(i, 1:3) = (v_friction_directions(:, i)' - kFrictionCoefficientHand*z')*(R_WO');
+    A(kFrictionConeSides+i, 4:6) = ...
+            v_friction_directions(:, i)' - kFrictionCoefficientTable*z';
+    A(2*kFrictionConeSides+i, 7:9) = ...
+            v_friction_directions(:, i)' - kFrictionCoefficientTable*z';
 end
-for i = 1:kPointsPerFaceContact
-    A(kFrictionConeSides*(1+kPointsPerFaceContact) + i, 3*i+1:3*i+3) = -z';
-end
-b_A = [zeros(kFrictionConeSides*(1+kPointsPerFaceContact), 1);
-       -kMinNormalForce*ones(kPointsPerFaceContact, 1)];
-
+A(3*kFrictionConeSides + 1, 1:3) = -z'*(R_WO');
+b_A = [zeros(kFrictionConeSides*(1+2), 1); -kMinNormalForce];
 
 disp('============================================================');
-disp('          Begin solving for velocity commands');
+disp('          Begin solving for velocity commands               ');
 disp('============================================================');
-disp('-------  Determine Possible Dimension of Control -------');
-kVelocitySampleSize = 50;
+disp('-------    Determine Possible Dimension of Control   -------');
+kVelocitySampleSize = 500;
 
 N = Jac_phi_q*Omega;
 NG = [N; G];
@@ -137,7 +134,7 @@ n_af = kDimActualized - n_av;
 % b_NG = [zeros(size(N, 1), 1); b_G];
 basis_NG = null(NG);
 basis_c = null([basis_NG';
-        eye(kDimActualized), zeros(kDimUnActualized,kDimActualized)]);
+        eye(kDimUnActualized), zeros(kDimUnActualized,kDimActualized)]);
 
 disp(['r_N + n_a: ', num2str(rank_N + kDimActualized)]);
 disp(['n_v: ', num2str(kDimGeneralized)]);
@@ -183,6 +180,10 @@ R_a = [null(C_best(:, kDimUnActualized+1:end))';
         C_best(:, kDimUnActualized+1:end)];
 T = blkdiag(eye(kDimUnActualized), R_a);
 
+b_NG = [zeros(size(N, 1), 1); b_G];
+v_star = NG\b_NG;
+w_v = C_best*v_star;
+
 disp('============================================================');
 disp('          Begin solving for force commands');
 disp('============================================================');
@@ -219,7 +220,31 @@ qp.beq = [zeros(n_free, 1); b_newton];
 
 options = optimoptions('quadprog', 'Display', 'final-detailed');
 x = quadprog(qp.Q, qp.f, qp.A, qp.b, qp.Aeq, qp.beq, [], [], [],options);
-disp('x: ');
-disp(x);
 
-check results
+disp('============================================================');
+disp('                  Done. Examing results');
+disp('============================================================');
+
+hc_force = x(1:3);
+tc_force = x(4:kDimLambda);
+un_force = x(kDimLambda+1:kDimLambda+kDimUnActualized);
+vel_force = x(kDimLambda+kDimUnActualized+1:n_free);
+dual_force = x(n_free+1:n_free+n_dual_free);
+force_force = x(n_free + n_dual_free + 1:end);
+
+disp('tc_force: ');
+disp(tc_force');
+disp('hc_force: ');
+disp(hc_force');
+disp('un_force: ');
+disp(un_force');
+disp('vel_force: ');
+disp(vel_force');
+% disp('dual_force: ');
+% disp(dual_force');
+disp('force_force: ');
+disp(force_force');
+
+
+
+
