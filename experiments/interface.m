@@ -135,37 +135,50 @@ global read_obj_pose_client inputs
 % disp('Calling read_obj_pose service:');
 % call(read_obj_pose_client);
 
-inputs.ObjectEdgeLength = 0.075;
-inputs.GoalVelocity = 0.1; % rad/s
-inputs.zTableTop = 0.259;
-p_WCenter0 = [30.75 439.5 259]'/1000;
-switch get(get(handles.BTNGROUP_block_tilting_direction,'SelectedObject'),'Tag')
-    case 'RBTN_X_plus'
-        inputs.p_WO0 = p_WCenter0 + ...
-                [inputs.ObjectEdgeLength/2, 0, 0]';
-        inputs.TiltDirection = [1 0 0]';
-        inputs.m_project = diag([1 0 1]);
-    case 'RBTN_Y_minus'
-        inputs.p_WO0 = p_WCenter0 + ...
-                [inputs.ObjectEdgeLength, -inputs.ObjectEdgeLength/2, 0]';
-        inputs.TiltDirection = [0 -1 0]';
-        inputs.m_project = diag([0 1 1]);
-    case 'RBTN_X_minus'
-        inputs.p_WO0 = p_WCenter0 + ...
-                [inputs.ObjectEdgeLength/2, -inputs.ObjectEdgeLength, 0]';
-        inputs.TiltDirection = [-1 0 0]';
-        inputs.m_project = diag([1 0 1]);
-    case 'RBTN_Y_plus'
-        inputs.p_WO0 = p_WCenter0 + ...
-                [0, -inputs.ObjectEdgeLength/2, 0]';
-        inputs.TiltDirection = [0 1 0]';
-        inputs.m_project = diag([0 1 1]);
+switch get(get(handles.BTNGROUP_select_experiment,'SelectedObject'),'Tag')
+    case 'RBTN_block_tilting'
+        inputs.ObjectEdgeLength = 0.075;
+        inputs.GoalVelocity = 0.1; % rad/s
+        inputs.zTableTop = 0.259;
+        p_WCenter0 = [30.75 439.5 259]'/1000;
+        switch get(get(handles.BTNGROUP_block_tilting_direction,'SelectedObject'),'Tag')
+            case 'RBTN_X_plus'
+                inputs.p_WO0 = p_WCenter0 + ...
+                        [inputs.ObjectEdgeLength/2, 0, 0]';
+                inputs.TiltDirection = [1 0 0]';
+                inputs.m_project = diag([1 0 1]);
+            case 'RBTN_Y_minus'
+                inputs.p_WO0 = p_WCenter0 + ...
+                        [inputs.ObjectEdgeLength, -inputs.ObjectEdgeLength/2, 0]';
+                inputs.TiltDirection = [0 -1 0]';
+                inputs.m_project = diag([0 1 1]);
+            case 'RBTN_X_minus'
+                inputs.p_WO0 = p_WCenter0 + ...
+                        [inputs.ObjectEdgeLength/2, -inputs.ObjectEdgeLength, 0]';
+                inputs.TiltDirection = [-1 0 0]';
+                inputs.m_project = diag([1 0 1]);
+            case 'RBTN_Y_plus'
+                inputs.p_WO0 = p_WCenter0 + ...
+                        [0, -inputs.ObjectEdgeLength/2, 0]';
+                inputs.TiltDirection = [0 1 0]';
+                inputs.m_project = diag([0 1 1]);
+            otherwise
+                error('[Error] unknown selected object.');
+        end
+        inputs.p_WH0 = inputs.p_WO0 - ...
+                0.15*inputs.ObjectEdgeLength*inputs.TiltDirection + ...
+                [0 0 inputs.ObjectEdgeLength]';
+        inputs.p_WHPrepare_mm = 1000*(inputs.p_WH0 + [0 0 0.2*inputs.ObjectEdgeLength]');
+    case 'RBTN_flip_against_corner'
+        inputs.kObjectLength         = ;
+        inputs.kObjectThickness      = ;
+        inputs.kGoalRotationVelocity = 0.1; 
+        inputs.p_WH0                 = ;
+        inputs.p_WO0                 = ;
+        inputs.p_WHPrepare_mm = ;
     otherwise
         error('[Error] unknown selected object.');
 end
-inputs.p_WH0 = inputs.p_WO0 - ...
-        0.15*inputs.ObjectEdgeLength*inputs.TiltDirection + ...
-        [0 0 inputs.ObjectEdgeLength]';
 
 set(handles.BTN_EXP_Pre_Grasp, 'Enable', 'on');
 set(handles.BTN_EXP_Engage, 'Enable', 'off');
@@ -182,17 +195,17 @@ function BTN_EXP_Pre_Grasp_Callback(hObject, eventdata, handles)
 % handles    structure with handles and user data (see GUIDATA)
 global move_tool_client get_robot_pose_client inputs
 
-% read current pose
+% obtain orientation
 call(get_robot_pose_client);
-fp_feedback = fopen(['../results/pose_feedback.txt'],'r');
+fp_feedback   = fopen(['../results/pose_feedback.txt'],'r');
 pose_feedback = fscanf(fp_feedback, '%f');
 fclose(fp_feedback);
 
 assert(length(pose_feedback) == 7);
 
-pose_set = pose_feedback;
-pose_set(1:3) = inputs.p_WH0 + [0 0 0.2*inputs.ObjectEdgeLength]';
-pose_set(1:3) = pose_set(1:3)*1000; % change unit to mm
+pose_set      = pose_feedback;
+pose_set(1:3) = inputs.p_WHPrepare_mm;
+
 fp = fopen(['../results/pose_set.txt'],'w');
 fprintf(fp, '%f ', pose_set);
 fclose(fp);
@@ -215,9 +228,17 @@ function BTN_EXP_Engage_Callback(hObject, eventdata, handles)
 % hObject    handle to BTN_EXP_Engage (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-global move_until_touch_client get_robot_pose_client inputs
+global move_until_touch_client get_robot_pose_client
 
-velocity_set = 5*[0 0 -1]'; % mm/s
+switch get(get(handles.BTNGROUP_select_experiment,'SelectedObject'),'Tag')
+    case 'RBTN_block_tilting'
+        velocity_set = 5*[0 0 -1]'; % mm/s
+    case 'RBTN_flip_against_corner'
+        velocity_set = 5*[0 1 0]'; % mm/s
+    otherwise
+        error('[Error] unknown selected object.');
+end
+
 fp = fopen(['../results/velocity_set.txt'],'w');
 fprintf(fp, '%f ', velocity_set);
 fclose(fp);
@@ -252,7 +273,17 @@ global get_robot_pose_client move_hybrid_client move_tool_client inputs
 
 disp('[Planning] Planning begin.');
 
-kTotalRotationAngle = 50*pi/180;
+switch get(get(handles.BTNGROUP_select_experiment,'SelectedObject'),'Tag')
+    case 'RBTN_block_tilting'
+        kTotalRotationAngle = 50*pi/180;
+    case 'RBTN_flip_against_corner'
+        kTotalRotationAngle = 70*pi/180;
+    otherwise
+        error('[Error] unknown selected object.');
+end
+
+
+
 total_time_s = kTotalRotationAngle/inputs.GoalVelocity;
 kNumberOfSteps = 10;
 
@@ -266,17 +297,34 @@ for steps = 1:kNumberOfSteps+5
     inputs.p_WH = pose_feedback(1:3);
 
     % check stop condition
-    p_WO = inputs.p_WO0;
-    v_C2C0 = inputs.p_WH0 - inputs.p_WO0;
-    angle_rotated = angBTVec(inputs.m_project*v_C2C0, inputs.m_project*(inputs.p_WH - p_WO));
+    switch get(get(handles.BTNGROUP_select_experiment,'SelectedObject'),'Tag')
+        case 'RBTN_block_tilting'
+            p_WO = inputs.p_WO0;
+            v_C2C0 = inputs.p_WH0 - inputs.p_WO0;
+            angle_rotated = angBTVec(inputs.m_project*v_C2C0, inputs.m_project*(inputs.p_WH - p_WO));
+        case 'RBTN_flip_against_corner'
+            a = inputs.p_WH0(2) - inputs.p_WO0(2) + inpts.kObjectThickness/2;
+            b = inputs.kObjectLength;
+            c = inputs.p_WH(2) - inputs.p_WO0(2) + inputs.kObjectThickness/2;
+            phi = atan2(a, b);
+            theta_plus_phi = asin(c/norm([a, b]));
+            angle_rotated = theta_plus_phi - phi;
+    end
     if (angle_rotated > kTotalRotationAngle)
         break;
     end
+
+    % run the algorithm
     tic
-    [n_av, n_af, R_a, w_v, eta_f] = example_2D_block_tilting(inputs);
+    switch get(get(handles.BTNGROUP_select_experiment,'SelectedObject'),'Tag')
+        case 'RBTN_block_tilting'
+            [n_av, n_af, R_a, w_v, eta_f] = example_2D_block_tilting(inputs);
+        case 'RBTN_flip_against_corner'
+            [n_av, n_af, R_a, w_v, eta_f] = example_flip_against_corner(inputs);
+    end
     toc
     
-    linear_velocity = norm(w_v)*1000;
+    linear_velocity = norm(w_v) * 1000;
     w_set = [zeros(n_af, 1); w_v];
     v_set = R_a^-1*w_set;
     pose_set = pose_feedback;
@@ -296,20 +344,22 @@ for steps = 1:kNumberOfSteps+5
 
     disp('Calling move_hybrid_service:');
     call(move_hybrid_client);
-
 end
 
 % disengage
-pose_set = pose_feedback;
-pose_set(1:3) = pose_set(1:3) + inputs.TiltDirection*0.04;
-pose_set(1:3) = pose_set(1:3)*1000;
-fp = fopen(['../results/pose_set.txt'],'w');
-fprintf(fp, '%f ', pose_set);
-fclose(fp);
+switch get(get(handles.BTNGROUP_select_experiment,'SelectedObject'),'Tag')
+    case 'RBTN_block_tilting'
+        pose_set = pose_feedback;
+        pose_set(1:3) = pose_set(1:3) + inputs.TiltDirection*0.04;
+        pose_set(1:3) = pose_set(1:3)*1000;
+        fp = fopen(['../results/pose_set.txt'],'w');
+        fprintf(fp, '%f ', pose_set);
+        fclose(fp);
+        disp('Calling move_tool_service:');
+        call(move_tool_client);
 
-disp('Calling move_tool_service:');
-call(move_tool_client);
-
+    case 'RBTN_flip_against_corner'
+end
 
 set(handles.BTN_EXP_Planning, 'Enable', 'off');
 set(handles.BTN_EXP_Release_Reset, 'Enable', 'on');
@@ -352,7 +402,6 @@ set(handles.BTN_EXP_Engage, 'Enable', 'off');
 set(handles.BTN_EXP_Planning, 'Enable', 'off');
 set(handles.BTN_EXP_Release_Reset, 'Enable', 'off');
 disp('Release_reset is done.');
-
 
 % --- Executes on button press in RBTN_X_plus.
 function RBTN_X_plus_Callback(hObject, eventdata, handles)

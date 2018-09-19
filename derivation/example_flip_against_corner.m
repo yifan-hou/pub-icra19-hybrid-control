@@ -33,18 +33,28 @@ kDimUnActualized = 3;
 kDimActualized = 2;
 kDimLambda = 6;
 
+
 % inputs
 if nargin == 0
     kObjectLength = 0.1;
     kObjectThickness = 0.02;
-    p_WH = [kObjectLength, kObjectThickness/2]';
     kGoalRotationVelocity = 0.5; % rad
+    % feedback
+    p_WH = [kObjectLength, kObjectThickness/2]';
 
     % initial poses
     p_WH0 = [kObjectLength, kObjectThickness/2]';
     p_WO0 = [kObjectLength/2, kObjectThickness/2]';
 else
+    kObjectLength = inputs.kObjectLength;
+    kObjectThickness = inputs.kObjectThickness;
+    kGoalRotationVelocity = inputs.kGoalRotationVelocity; % rad
+    % feedback
+    p_WH = inputs.p_WH;
 
+    % initial poses
+    p_WH0 = inputs.p_WH0;
+    p_WO0 = inputs.p_WO0;
 end
 
 % compute object pose
