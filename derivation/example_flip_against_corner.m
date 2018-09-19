@@ -98,7 +98,7 @@ F = [F_WGO; 0; F_WGH];
 %       binwall contact normal force lower bound
 %       binwall contact normal force upper bound
 
-%   Equality Aeq*lambda = beq_A
+%   Equality Aeq*lambda = beq
 %       table contact is sliding;
 %       bin wall contact is sliding;
 % lambda: f_why, f_whx, f_table_normal, f_binwall_normal,
@@ -202,8 +202,9 @@ H = [eye(kDimUnActualized), zeros(kDimUnActualized, kDimActualized)];
 % Newton's laws
 T_inv = T^-1;
 M_newton = [zeros(kDimUnActualized, kDimLambda) H*T_inv; ...
-            T*(Omega')*(Jac_phi_q_all') eye(kDimGeneralized)];
-b_newton = [zeros(size(H,1), 1); -T*F];
+            T*(Omega')*(Jac_phi_q_all') eye(kDimGeneralized); ...
+            Aeq];
+b_newton = [zeros(size(H,1), 1); -T*F; beq];
 
 M_free = M_newton(:, [1:kDimLambda+kDimUnActualized, kDimLambda+kDimUnActualized+n_af+1:end]);
 M_eta_af = M_newton(:, [kDimLambda+kDimUnActualized+1:kDimLambda+kDimUnActualized+n_af]);
@@ -224,12 +225,9 @@ A_eta_av = A_temp(:, kDimLambda+kDimUnActualized+n_af+1:end);
 qp.A = [A_lambda_eta_u A_eta_av zeros(size(A, 1), n_dual_free) A_eta_af];
 qp.b = b_A;
 % Aeq = beq
-Aeq_free = Aeq(:, [1:(kDimLambda+kDimUnActualized), (end-n_av+1):end]);
-Aeq_ff = Aeq(:, (kDimLambda+kDimUnActualized+1):(kDimLambda+kDimUnActualized+n_af));
 qp.Aeq = [2*eye(n_free), M_free', zeros(n_free, n_af);
-          M_free, zeros(size(M_free, 1)), M_eta_af;
-          Aeq_free, zeros(size(Aeq, 1), n_dual_free), Aeq_ff];
-qp.beq = [zeros(n_free, 1); b_newton; beq];
+          M_free, zeros(size(M_free, 1)), M_eta_af];
+qp.beq = [zeros(n_free, 1); b_newton];
 
 options = optimoptions('quadprog', 'Display', 'final-detailed');
 x = quadprog(qp.Q, qp.f, qp.A, qp.b, qp.Aeq, qp.beq, [], [], [],options);
@@ -255,7 +253,3 @@ disp('Equality constraints:');
 disp(qp.beq - qp.Aeq*x);
 disp('Inequality constraints b - Ax > 0:');
 disp(qp.b - qp.A*x);
-
-
-
-
