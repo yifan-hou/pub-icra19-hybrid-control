@@ -34,7 +34,7 @@ else
     p_WH = inputs.p_WH;
 
     kObjectEdgeLength = inputs.ObjectEdgeLength;
-    kGoalVelocity     = inputs.GoalVelocity;
+    kGoalVelocity     = inputs.kGoalRotationVelocity;
     kTiltDirection    = inputs.TiltDirection;
     m_project         = inputs.m_project;
     p_WH0             = inputs.p_WH0;
