@@ -2,26 +2,26 @@
 %
 % Input arguments
 %   required:
-%       Omega
-%       Jac_phi_q_all
-%       G
-%       b_G
-%       F
-%       Aeq
-%       beq
-%       A
-%       b_A
-%       dims
-%           dims.Actualized
-%           dims.UnActualized
-%           dims.SlidingFriction
-%           dims.Lambda
+%       Omega: matrix for mapping from generalized velocity to configuration
+%               time derivatives: q_dot = Omega*v
+%       Jac_phi_q_all: Jacobian of holonomic constraints w.r.t. configuration
+%       G, b_G: Goal description, affine constraints on generalized velocity
+%               G*v = b_G
+%       F: External force vector. Same size as generalized force
+%       Aeq, beq: Guard condition, Aeq*v = beq
+%       A, b_A: Guard condition, A*v <= b_A
+%       dims:
+%           dims.Actualized: number of actualized dimensions
+%           dims.UnActualized: number of unactualized dimensions
+%           dims.SlidingFriction: number of sliding friction dimensions
+%           dims.Lambda: number of reaction forces
 %
 %   optional:
-%       VelocitySampleSize
+%       VelocitySampleSize: sameple this number of velocity vectors, then pick
+%               the best
 
-function [] = solvehfvc(Omega, Jac_phi_q_all, G, b_G, F, ...
-        Aeq, beq, A, b_A, dims, varargin)
+function [n_av, n_af, R_a, w_v, force_force] = solvehfvc(Omega, ...
+        Jac_phi_q_all, G, b_G, F, Aeq, beq, A, b_A, dims, varargin)
 
 persistent para
 if isempty(para)
@@ -39,7 +39,7 @@ if isempty(para)
     addRequired(para, 'A', validMatrix);
     addRequired(para, 'b_A', validVector);
     addRequired(para, 'dims', validStruct);
-    addParameter(p, 'VelocitySampleSize', 100);
+    addParameter(para, 'VelocitySampleSize', 100);
 end
 
 parse(para, Omega, Jac_phi_q_all, G, b_G, F, Aeq, beq, A, b_A, dims, varargin);
@@ -161,10 +161,10 @@ options = optimoptions('quadprog', 'Display', 'final-detailed');
 x = quadprog(qp.Q, qp.f, qp.A, qp.b, qp.Aeq, qp.beq, [], [], [],options);
 
 disp('============================================================');
-disp('                  Done. Examing results');
+disp('                  Done.                                     ');
 disp('============================================================');
 
-lambda = x(1:kDimLambda);
+% lambda = x(1:kDimLambda);
 force_force = x(n_free + n_dual_free + 1:end);
 
 % hand_contact_force = lambda(1:2);
@@ -186,7 +186,11 @@ disp(R_a^-1*[force_force; zeros(n_av, 1)]);
 % disp('binwall contact force: ');
 % disp(binwall_contact_force');
 
-disp('Equality constraints:');
-disp(qp.beq - qp.Aeq*x);
-disp('Inequality constraints b - Ax > 0:');
-disp(qp.b - qp.A*x);
+disp('Equality constraints violation:');
+disp(sum(abs(qp.beq - qp.Aeq*x)));
+disp('Inequality constraints b - Ax > 0 violation:');
+b_Ax = qp.b - qp.A*x;
+disp(sum(find(b_Ax < 0)));
+
+
+end

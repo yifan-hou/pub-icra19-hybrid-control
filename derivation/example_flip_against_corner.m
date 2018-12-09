@@ -97,7 +97,6 @@ b_G = goal_velocity_z;
 
 % Holonomic constraints
 Jac_phi_q_all = jac_phi_q_flip_against_corner(p_WO, theta, p_WH, p_OHC, p_OTC, p_OBC);
-Jac_phi_q = Jac_phi_q_all(1:end-kDimSlidingFriction, :);
 
 % external force
 F_WGO = [0 -kObjectMass*kGravityConstant]';
@@ -138,3 +137,12 @@ Aeq(1, [5, 3]) = kFrictionCoefficientTable*z'+y';
 Aeq(2, [4, 6]) = kFrictionCoefficientBin*y'-z';
 beq = [0; 0];
 
+
+
+dims.Actualized      = kDimActualized;
+dims.UnActualized    = kDimUnActualized;
+dims.SlidingFriction = kDimSlidingFriction;
+dims.Lambda          = kDimLambda;
+
+[n_av, n_af, R_a, w_v, force_force] = solvehfvc(Omega, Jac_phi_q_all, ...
+        G, b_G, F, Aeq, beq, A, b_A, dims, 'VelocitySampleSize', 500);
