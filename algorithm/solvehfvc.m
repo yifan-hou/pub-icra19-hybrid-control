@@ -17,17 +17,25 @@
 %           dims.Lambda: number of reaction forces
 %
 %   optional:
-%       VelocitySampleSize: sameple this number of velocity vectors, then pick
-%               the best
+%       num_seeds: number of random initializations to try when solving for
+%               the velocity control
+% Outputs
+%   n_av: number, dimensionality of velocity controlled actions
+%   n_af: number, dimensionality of force controlled actions
+%   R_a: (n_av+n_af)x(n_av+n_af) matrix, the transformation that describes the
+%           direction of velocity&force control actions
+%   w_av: n_av x 1 vector, magnitudes of velocity controls
+%   eta_af: n_af x 1 vector,  magnitudes of force controls
 
-function [n_av, n_af, R_a, w_v, force_force] = solvehfvc(Omega, ...
+
+function [n_av, n_af, R_a, w_av, eta_af] = solvehfvc(Omega, ...
         Jac_phi_q_all, G, b_G, F, Aeq, beq, A, b_A, dims, varargin)
 
 persistent para
 if isempty(para)
     para = inputParser;
     validMatrix = @(x) isnumeric(x);
-    validVector = @(x) isnumeric(x) && (size(x, 2) == 1);
+    validVector = @(x) isempty(x) || (isnumeric(x) && (size(x, 2) == 1));
     validStruct = @(x) isstruct(x);
     addRequired(para, 'Omega', validMatrix);
     addRequired(para, 'Jac_phi_q_all', validMatrix);
@@ -39,12 +47,12 @@ if isempty(para)
     addRequired(para, 'A', validMatrix);
     addRequired(para, 'b_A', validVector);
     addRequired(para, 'dims', validStruct);
-    addParameter(para, 'VelocitySampleSize', 100);
+    addParameter(para, 'num_seeds', 1);
 end
 
-parse(para, Omega, Jac_phi_q_all, G, b_G, F, Aeq, beq, A, b_A, dims, varargin);
+parse(para, Omega, Jac_phi_q_all, G, b_G, F, Aeq, beq, A, b_A, dims, varargin{:});
 
-kVelocitySampleSize = para.Results.VelocitySampleSize;
+kNumSeeds = para.Results.num_seeds;
 
 % constants
 kDimActualized      = dims.Actualized;
@@ -81,35 +89,82 @@ disp(['n_v: ', num2str(kDimGeneralized)]);
 assert(rank_N + kDimActualized > kDimGeneralized);
 
 disp('-------  Solve for Directions  -------')
-
-% sample C
 n_c = rank_NG - kDimUnActualized;
-cost_all_samples = zeros(kVelocitySampleSize, 1);
-rank_C_all_samples = zeros(kVelocitySampleSize, 1);
-rank_NC_all_samples = zeros(kVelocitySampleSize, 1);
-C_all_samples = zeros(n_av, kDimGeneralized, kVelocitySampleSize);
+
+% % sample-based method for C
+% cost_all_samples = zeros(kVelocitySampleSize, 1);
+% rank_C_all_samples = zeros(kVelocitySampleSize, 1);
+% rank_NC_all_samples = zeros(kVelocitySampleSize, 1);
+% C_all_samples = zeros(n_av, kDimGeneralized, kVelocitySampleSize);
+% basis_N = null(N);
+% Nunit = null(basis_N');
+% % Nunit = normalizeByRow(N);
+% for i = 1:kVelocitySampleSize
+%     k = rand(n_c, n_av)-0.5;
+%     C = (basis_c*k)';
+%     C = normalizeByRow(C);
+%     C_all_samples(:, :, i) = C;
+%     % compute costs
+%     CC = abs(C*(C'));
+%     cost_c_independent = sum(sum(CC - diag(diag(CC))));
+%     cost_N_independent = norm(C*(Nunit));
+%     cost_N_independent2 = norm(C*basis_N);
+%     % cost1(i) = cost_N_independent;
+%     % cost2(i) = cost_N_independent2;
+
+%     % cost_N_independent = norm(C*basis_N)^2;
+%     cost_all_samples(i) = cost_c_independent - cost_N_independent;
+%     % check independency
+%     rank_C_all_samples(i) = rank(C);
+%     rank_NC_all_samples(i) = rank([N;C]);
+% end
+% cost_all_samples(rank_C_all_samples~=n_av) = inf;
+% cost_all_samples(rank_NC_all_samples~=rank_NG) = inf;
+% [~, best_id] = min(cost_all_samples);
+% C_best = C_all_samples(:, :, best_id);
+
+
+% Projected gradient descent
+k  = rand(n_c, n_av)-0.5; % initial solution
+kn = normByCol(basis_c*k);
+k  = bsxfun(@rdivide, k, kn);
+k0 = k;
+
 basis_N = null(N);
-for i = 1:kVelocitySampleSize
-    k = rand(n_c, n_av)-0.5;
-    C = (basis_c*k)';
-    C = normalizeByRow(C);
-    C_all_samples(:, :, i) = C;
-    % compute costs
-    CC = abs(C*(C'));
-    cost_c_independent = sum(sum(CC - diag(diag(CC))));
-    cost_N_independent = sum(sum(abs(C*basis_N)));
-    cost_all_samples(i) = cost_c_independent - cost_N_independent;
-    % check independency
-    rank_C_all_samples(i) = rank(C);
-    rank_NC_all_samples(i) = rank([N;C]);
+Nunit   = null(basis_N');
+
+NIter = 200;
+BB    = basis_c'*basis_c;
+NN    = basis_N*(basis_N');
+for iter = 1:NIter
+    % compute gradient
+    g = zeros(n_c, n_av);
+    costs = 0;
+    for i = 1:n_av
+        ki = k(:,i);
+        for j = 1:n_av
+            if i == j
+                continue;
+            end
+            kj = k(:,j);
+            costs = costs + (ki'*BB*kj)^2;
+            g(:, i) = g(:, i) + 2*(ki'*BB*kj)*BB*kj;
+        end
+        g(:, i) = g(:, i) - 2*(basis_c')*NN*basis_c*ki;
+        costs   = costs - ki'*(basis_c')*NN*basis_c*ki;
+    end
+    % descent
+    delta =1;
+    k     = k - delta*g;
+    % project
+    kn = normByCol(basis_c*k);
+    k  = bsxfun(@rdivide, k, kn);
+    disp(['cost: ' num2str(costs) ', grad: ' num2str(norm(g))]);
 end
+k0
+k
 
-cost_all_samples(rank_C_all_samples~=n_av) = inf;
-cost_all_samples(rank_NC_all_samples~=rank_NG) = inf;
-
-[~, best_id] = min(cost_all_samples);
-
-C_best = C_all_samples(:, :, best_id);
+C_best = (basis_c*k)';
 
 R_a = [null(C_best(:, kDimUnActualized+1:end))';
         C_best(:, kDimUnActualized+1:end)];
@@ -117,11 +172,9 @@ T = blkdiag(eye(kDimUnActualized), R_a);
 
 b_NG = [zeros(size(N, 1), 1); b_G];
 v_star = NG\b_NG;
-w_v = C_best*v_star;
-% disp('R_a:');
-% disp(R_a);
-% disp('v:');
-% disp(R_a^-1*[zeros(n_af, 1); w_v]);
+w_av = C_best*v_star;
+
+
 disp('============================================================');
 disp('          Begin solving for force commands');
 disp('============================================================');
@@ -165,7 +218,7 @@ disp('                  Done.                                     ');
 disp('============================================================');
 
 % lambda = x(1:kDimLambda);
-force_force = x(n_free + n_dual_free + 1:end);
+eta_af = x(n_free + n_dual_free + 1:end);
 
 % hand_contact_force = lambda(1:2);
 % table_contact_force = lambda([3 5]);
@@ -173,10 +226,10 @@ force_force = x(n_free + n_dual_free + 1:end);
 
 
 disp('World frame velocity:');
-disp(R_a^-1*[zeros(n_af, 1); w_v]);
+disp(R_a^-1*[zeros(n_af, 1); w_av]);
 
 disp('World frame force:');
-disp(R_a^-1*[force_force; zeros(n_av, 1)]);
+disp(R_a^-1*[eta_af; zeros(n_av, 1)]);
 
 
 % disp('hand contact force: ');

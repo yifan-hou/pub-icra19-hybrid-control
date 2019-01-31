@@ -1,4 +1,19 @@
-clear;clc;
+% script to solve the bottle rotation example.
+% This file compute the Jacobians, Goal descriptions, external forces,
+%   guard conditions, etc, so as to call solvehfvc.m
+%
+% states
+%   [x_o, y_o, z_0, qw_o, qx_o, qy_o, qz_o, x_h, y_h, z_h]'
+%
+% Outputs
+%   n_av: number, dimensionality of velocity controlled actions
+%   n_af: number, dimensionality of force controlled actions
+%   R_a: (n_av+n_af)x(n_av+n_af) matrix, the transformation that describes the
+%           direction of velocity&force control actions
+%   w_av: n_av x 1 vector, magnitudes of velocity controls
+%   eta_af: n_af x 1 vector,  magnitudes of force controls
+function [n_av, n_af, R_a, w_av, eta_af] = bottle_rotation_control()
+addpath ../../algorithm
 addpath generated
 
 % weight
@@ -9,7 +24,6 @@ kGravityConstant = 9.8;
 % geometry
 kObjectRadius = 0.04;
 kObjectLength = 0.2;
-kTableZ = 0.360;  % project rotation axis to this height to avoid ossilation
 
 % friction
 kFrictionCoefficientTable = 0.8;
@@ -23,13 +37,6 @@ kMinNormalForce = 0.5; % Newton
 p_WH = [0 0 0.5]';
 q_WH = aa2quat(0.2, [1 0 0]');
 kGoalVelocity = 0.5; % rad
-
-
-% ------------------------------------------------------------------
-kDimGeneralized = 12;
-kDimUnActualized = 6;
-kDimActualized = 6;
-kDimLambda = 3*(1+kPointsPerFaceContact);
 
 for i = 1:kFrictionConeSides
     v_friction_directions(1, i) = sin(2*pi*i/kFrictionConeSides);
@@ -89,7 +96,7 @@ G = [eye(6) zeros(6)];
 b_G = t_OG;
 
 % Holonomic constraints
-Jac_phi_q = jac_phi_q(p_WO, q_WO, p_WH, q_WH, p_OTC, p_WTC, ...
+Jac_phi_q = jac_phi_q_bottle_rotation(p_WO, q_WO, p_WH, q_WH, p_OTC, p_WTC, ...
         p_OHC_all, p_HHC_all);
 
 % external force
@@ -97,10 +104,7 @@ F_WGO = [0 0 -kObjectMass*kGravityConstant]';
 F_WGH = [0 0 -kHandMass*kGravityConstant]';
 F = [R_WO'*F_WGO; zeros(3,1); R_WH'*F_WGH; zeros(3,1)];
 
-% newton's third law
-H = [zeros(6, 3*(1+kPointsPerFaceContact)), eye(6), zeros(6)];
-
-% Artificial constraints
+% Guard Conditions
 A = zeros(kFrictionConeSides*(1+kPointsPerFaceContact)+kPointsPerFaceContact, ...
         3*(1+kPointsPerFaceContact)+12);
 z = [0 0 1]';
@@ -117,11 +121,12 @@ end
 b_A = [zeros(kFrictionConeSides*(1+kPointsPerFaceContact), 1);
        -kMinNormalForce*ones(kPointsPerFaceContact, 1)];
 
+dims.Actualized      = 6;
+dims.UnActualized    = 6;
+dims.SlidingFriction = 0;
+dims.Lambda          = 3*(1+kPointsPerFaceContact);
 
-dims.Actualized      = kDimActualized;
-dims.UnActualized    = kDimUnActualized;
-dims.SlidingFriction = kDimSlidingFriction;
-dims.Lambda          = kDimLambda;
+[n_av, n_af, R_a, w_av, eta_af] = solvehfvc(Omega, Jac_phi_q, ...
+        G, b_G, F, [], [], A, b_A, dims, 'num_seeds', 1);
 
-[n_av, n_af, R_a, w_v, force_force] = solvehfvc(Omega, Jac_phi_q_all, ...
-        G, b_G, F, Aeq, beq, A, b_A, dims, varargin);
+

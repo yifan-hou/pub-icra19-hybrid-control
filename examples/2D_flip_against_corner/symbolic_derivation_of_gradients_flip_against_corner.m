@@ -11,9 +11,11 @@ p_OHC = sym('p_OHC', [2,1], 'real'); % contact with hand
 p_OTC = sym('p_OTC', [2,1], 'real'); % contact with table
 p_OBC = sym('p_OBC', [2,1], 'real'); % contact with bin wall
 
+% 2D rotation matrix
 R_WO = aa2mat(theta, [1 0 0]');
 R_WO = R_WO(2:3, 2:3);
 
+% all the holonomic constraints
 holonomic_constraint = sym('Phi', [6, 1], 'real');
 % Hand contact
 holonomic_constraint(1:2) = p_WH - (R_WO*p_OHC+p_WO);

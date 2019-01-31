@@ -46,7 +46,7 @@ disp('Done. Generating file:');
 %% ---------------------------------------------------------------
 % 			write to file
 % ---------------------------------------------------------------
-jac_phi_q  = matlabFunction(Phi_q, 'File', 'generated/jac_phi_q', 'vars', ...
+jac_phi_q  = matlabFunction(Phi_q, 'File', 'generated/jac_phi_q_bottle_rotation', 'vars', ...
 	{p_WO, q_WO, p_WH, q_WH, p_OTC, p_WTC, p_OHC_all, p_HHC_all});
 save generated/derivation.mat;
 disp('All done');

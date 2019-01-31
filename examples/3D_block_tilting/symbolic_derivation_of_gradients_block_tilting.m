@@ -40,7 +40,7 @@ disp('Done. Generating file:');
 %% ---------------------------------------------------------------
 %           write to file
 % ---------------------------------------------------------------
-matlabFunction(Phi_q, 'File', 'generated/jac_phi_q_2D_block_tilting', ...
+matlabFunction(Phi_q, 'File', 'generated/jac_phi_q_block_tilting', ...
         'vars', {p_WO, q_WO, p_WH, p_OHC, p_WTC_all, p_OTC_all});
 save generated/derivation.mat;
 disp('All done');

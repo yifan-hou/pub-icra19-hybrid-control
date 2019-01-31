@@ -1,11 +1,25 @@
-% state
-%   [y_o, z_0, theta_o, y_h, z_h]
+% function to solve the flip against corner example.
+% This file compute the Jacobians, Goal descriptions, external forces,
+%   guard conditions, etc, so as to call solvehfvc.m
+%
+% states
+%   [y_o, z_0, theta_o, y_h, z_h]'
 % choice of coordinate frames
 %   see figure
 % Goal is specified as the velocity of hand contact in z direction
-function [n_av, n_af, R_a, w_v, force_force] = example_flip_against_corner(inputs)
-% clear;clc;
-addpath ../derivation/generated
+%
+% If run with no input, default state is used.
+% If run with state input, compute the controls at the given state.
+% Outputs
+%   n_av: number, dimensionality of velocity controlled actions
+%   n_af: number, dimensionality of force controlled actions
+%   R_a: (n_av+n_af)x(n_av+n_af) matrix, the transformation that describes the
+%           direction of velocity&force control actions
+%   w_av: n_av x 1 vector, magnitudes of velocity controls
+%   eta_af: n_af x 1 vector,  magnitudes of force controls
+function [n_av, n_af, R_a, w_av, eta_af] = flip_against_corner_control(inputs)
+addpath ../../algorithm
+addpath generated
 
 % how to cope with sliding friciton
 % 1. separate jacobian for velocity and force. force has more entries for friction
@@ -27,7 +41,7 @@ kMinNormalForce = 5; % Newton
 kMinNormalForceSliding = -5; % Newton
 kMaxNormalForceSliding = 100; % Newton
 
-
+% dimensions
 kDimGeneralized = 5;
 kDimUnActualized = 3;
 kDimActualized = 2;
@@ -58,7 +72,7 @@ else
 end
 
 % compute object pose
-%   Ideally this should be done by perception; here we hack this by assuming the
+%   Ideally we should use perception; here we hack it by assuming the
 %   contact between the hand and the object is sticking, and solve the object
 %   pose from hand pose
 
@@ -138,11 +152,10 @@ Aeq(2, [4, 6]) = kFrictionCoefficientBin*y'-z';
 beq = [0; 0];
 
 
-
 dims.Actualized      = kDimActualized;
 dims.UnActualized    = kDimUnActualized;
 dims.SlidingFriction = kDimSlidingFriction;
 dims.Lambda          = kDimLambda;
 
-[n_av, n_af, R_a, w_v, force_force] = solvehfvc(Omega, Jac_phi_q_all, ...
-        G, b_G, F, Aeq, beq, A, b_A, dims, 'VelocitySampleSize', 500);
+[n_av, n_af, R_a, w_av, eta_af] = solvehfvc(Omega, Jac_phi_q_all, ...
+        G, b_G, F, Aeq, beq, A, b_A, dims, 'num_seeds', 1);
