@@ -34,8 +34,8 @@ kHandMass = 0.0;
 kGravityConstant = 9.8;
 
 % friction
-kFrictionCoefficientHand = 0.7; % lower bound to ensure sticking
 kFrictionCoefficientTable = 0.4; % upper bound to ensure sliding
+kFrictionCoefficientHand = 0.7; % lower bound to ensure sticking
 kFrictionCoefficientBin = 0.4; % upper bound to ensure sliding
 kMinNormalForce = 5; % Newton
 kMinNormalForceSliding = -5; % Newton
@@ -45,7 +45,7 @@ kMaxNormalForceSliding = 100; % Newton
 kDimGeneralized = 5;
 kDimUnActualized = 3;
 kDimActualized = 2;
-kDimLambda = 6;
+kDimLambda = 4;
 kDimSlidingFriction = 2;
 
 % inputs
@@ -111,6 +111,7 @@ b_G = goal_velocity_z;
 
 % Holonomic constraints
 Jac_phi_q_all = jac_phi_q_flip_against_corner(p_WO, theta, p_WH, p_OHC, p_OTC, p_OBC);
+% return;
 
 % external force
 F_WGO = [0 -kObjectMass*kGravityConstant]';
@@ -131,7 +132,7 @@ F = [F_WGO; 0; F_WGH];
 %       bin wall contact is sliding;
 % lambda: f_why, f_whx, f_table_normal, f_binwall_normal,
 %         f_table_friction, f_binwall_friction
-A = zeros(2 + 1 + 4, kDimLambda + kDimGeneralized);
+A = zeros(2 + 1 + 4, kDimLambda + kDimSlidingFriction + kDimGeneralized);
 y = [1 0]';
 z = [0 1]';
 A(1, 1:2) = (z' - kFrictionCoefficientHand*y')*(R_WO');
@@ -144,7 +145,7 @@ A(7, 4) = 1;
 b_A = [0 0 -kMinNormalForce -kMinNormalForceSliding kMaxNormalForceSliding ...
         -kMinNormalForceSliding kMaxNormalForceSliding]';
 
-Aeq = zeros(2, kDimLambda + kDimGeneralized);
+Aeq = zeros(2, kDimLambda + kDimSlidingFriction + kDimGeneralized);
 % % % -y'*ftable = mu*z'*ftable
 Aeq(1, [5, 3]) = kFrictionCoefficientTable*z'+y';
 % % z'*f = mu*y'*f
@@ -158,4 +159,4 @@ dims.SlidingFriction = kDimSlidingFriction;
 dims.Lambda          = kDimLambda;
 
 [n_av, n_af, R_a, w_av, eta_af] = solvehfvc(Omega, Jac_phi_q_all, ...
-        G, b_G, F, Aeq, beq, A, b_A, dims, 'num_seeds', 1);
+        G, b_G, F, Aeq, beq, A, b_A, dims, 'num_seeds', 3);

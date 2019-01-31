@@ -88,19 +88,14 @@ Adj_g_WO_inv = [R_WO', -R_WO'*wedge(p_WO); zeros(3), R_WO'];
 
 t_OG = Adj_g_WO_inv*t_WG;
 
-G = [eye(6) zeros(6, 3)];
+G = [eye(6) zeros(6, 3)    ];
 b_G = t_OG;
 
-% Holonomic constraints
-Jac_phi_q = jac_phi_q_block_tilting(p_WO, q_WO, p_WH, p_OHC, p_WTC_all, p_OTC_all);
 
 % external force
 F_WGO = [0 0 -kObjectMass*kGravityConstant]';
 F_WGH = [0 0 -kHandMass*kGravityConstant]';
 F = [R_WO'*F_WGO; zeros(3,1); F_WGH];
-
-% newton's third law
-H = [zeros(6, 3*(1+2)), eye(6), zeros(6, 3)];
 
 % Guard conditions
 %   hand contact is sticking; (force is in world frame)
@@ -124,7 +119,11 @@ dims.UnActualized    = 6;
 dims.SlidingFriction = 0;
 dims.Lambda          = 3*(1+2);
 
+% Jacobian of Holonomic constraints
+Jac_phi_q = jac_phi_q_block_tilting(p_WO, q_WO, p_WH, p_OHC, p_WTC_all, p_OTC_all);
+tic
 [n_av, n_af, R_a, w_av, eta_af] = solvehfvc(Omega, Jac_phi_q, ...
-        G, b_G, F, [], [], A, b_A, dims, 'num_seeds', 1);
+        G, b_G, F, [], [], A, b_A, dims, 'num_seeds', 3);
+toc
 
 

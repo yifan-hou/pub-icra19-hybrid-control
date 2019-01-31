@@ -59,10 +59,11 @@ kDimActualized      = dims.Actualized;
 kDimUnActualized    = dims.UnActualized;
 kDimSlidingFriction = dims.SlidingFriction;
 kDimLambda          = dims.Lambda;
+kDimContactForce    = kDimLambda + kDimSlidingFriction;
 
 Jac_phi_q = Jac_phi_q_all(1 : end - kDimSlidingFriction, :);
 kDimGeneralized = kDimActualized + kDimUnActualized;
-assert(kDimLambda == size(Jac_phi_q_all, 1));
+assert(kDimLambda == size(Jac_phi_q, 1));
 
 disp('============================================================');
 disp('          Begin solving for velocity commands               ');
@@ -91,80 +92,51 @@ assert(rank_N + kDimActualized > kDimGeneralized);
 disp('-------  Solve for Directions  -------')
 n_c = rank_NG - kDimUnActualized;
 
-% % sample-based method for C
-% cost_all_samples = zeros(kVelocitySampleSize, 1);
-% rank_C_all_samples = zeros(kVelocitySampleSize, 1);
-% rank_NC_all_samples = zeros(kVelocitySampleSize, 1);
-% C_all_samples = zeros(n_av, kDimGeneralized, kVelocitySampleSize);
-% basis_N = null(N);
-% Nunit = null(basis_N');
-% % Nunit = normalizeByRow(N);
-% for i = 1:kVelocitySampleSize
-%     k = rand(n_c, n_av)-0.5;
-%     C = (basis_c*k)';
-%     C = normalizeByRow(C);
-%     C_all_samples(:, :, i) = C;
-%     % compute costs
-%     CC = abs(C*(C'));
-%     cost_c_independent = sum(sum(CC - diag(diag(CC))));
-%     cost_N_independent = norm(C*(Nunit));
-%     cost_N_independent2 = norm(C*basis_N);
-%     % cost1(i) = cost_N_independent;
-%     % cost2(i) = cost_N_independent2;
-
-%     % cost_N_independent = norm(C*basis_N)^2;
-%     cost_all_samples(i) = cost_c_independent - cost_N_independent;
-%     % check independency
-%     rank_C_all_samples(i) = rank(C);
-%     rank_NC_all_samples(i) = rank([N;C]);
-% end
-% cost_all_samples(rank_C_all_samples~=n_av) = inf;
-% cost_all_samples(rank_NC_all_samples~=rank_NG) = inf;
-% [~, best_id] = min(cost_all_samples);
-% C_best = C_all_samples(:, :, best_id);
-
-
 % Projected gradient descent
-k  = rand(n_c, n_av)-0.5; % initial solution
-kn = normByCol(basis_c*k);
-k  = bsxfun(@rdivide, k, kn);
-k0 = k;
-
+NIter   = 50;
 basis_N = null(N);
-Nunit   = null(basis_N');
+BB      = basis_c'*basis_c;
+NN      = basis_N*(basis_N');
 
-NIter = 200;
-BB    = basis_c'*basis_c;
-NN    = basis_N*(basis_N');
-for iter = 1:NIter
-    % compute gradient
-    g = zeros(n_c, n_av);
-    costs = 0;
-    for i = 1:n_av
-        ki = k(:,i);
-        for j = 1:n_av
-            if i == j
-                continue;
-            end
-            kj = k(:,j);
-            costs = costs + (ki'*BB*kj)^2;
-            g(:, i) = g(:, i) + 2*(ki'*BB*kj)*BB*kj;
-        end
-        g(:, i) = g(:, i) - 2*(basis_c')*NN*basis_c*ki;
-        costs   = costs - ki'*(basis_c')*NN*basis_c*ki;
-    end
-    % descent
-    delta =1;
-    k     = k - delta*g;
-    % project
+cost_all = zeros(1, kNumSeeds);
+k_all = rand([n_c, n_av, kNumSeeds]);
+for seed = 1:kNumSeeds
+    k  = k_all(:,:, seed);
     kn = normByCol(basis_c*k);
     k  = bsxfun(@rdivide, k, kn);
-    disp(['cost: ' num2str(costs) ', grad: ' num2str(norm(g))]);
-end
-k0
-k
 
-C_best = (basis_c*k)';
+    for iter = 1:NIter
+        % compute gradient
+        g = zeros(n_c, n_av);
+        costs = 0;
+        for i = 1:n_av
+            ki = k(:,i);
+            for j = 1:n_av
+                if i == j
+                    continue;
+                end
+                kj = k(:,j);
+                costs = costs + (ki'*BB*kj)^2;
+                g(:, i) = g(:, i) + 2*(ki'*BB*kj)*BB*kj;
+            end
+            g(:, i) = g(:, i) - 2*(basis_c')*NN*basis_c*ki;
+            costs   = costs - ki'*(basis_c')*NN*basis_c*ki;
+        end
+        % descent
+        delta = 10;
+        k     = k - delta*g;
+        % project
+        kn = normByCol(basis_c*k);
+        k  = bsxfun(@rdivide, k, kn);
+    end
+    cost_all(seed) = costs;
+    k_all(:,:,seed) = k;
+    disp(['cost: ' num2str(costs)]);
+end
+
+[~, best_id] = min(cost_all);
+k_best = k_all(:,:,best_id);
+C_best = (basis_c*k_best)';
 
 R_a = [null(C_best(:, kDimUnActualized+1:end))';
         C_best(:, kDimUnActualized+1:end)];
@@ -182,26 +154,26 @@ disp('============================================================');
 H = [eye(kDimUnActualized), zeros(kDimUnActualized, kDimActualized)];
 % Newton's laws
 T_inv = T^-1;
-M_newton = [zeros(kDimUnActualized, kDimLambda) H*T_inv; ...
+M_newton = [zeros(kDimUnActualized, kDimContactForce) H*T_inv; ...
             T*(Omega')*(Jac_phi_q_all') eye(kDimGeneralized); ...
             Aeq];
 b_newton = [zeros(size(H,1), 1); -T*F; beq];
 
-M_free = M_newton(:, [1:kDimLambda+kDimUnActualized, kDimLambda+kDimUnActualized+n_af+1:end]);
-M_eta_af = M_newton(:, [kDimLambda+kDimUnActualized+1:kDimLambda+kDimUnActualized+n_af]);
+M_free = M_newton(:, [1:kDimContactForce+kDimUnActualized, kDimContactForce+kDimUnActualized+n_af+1:end]);
+M_eta_af = M_newton(:, [kDimContactForce+kDimUnActualized+1:kDimContactForce+kDimUnActualized+n_af]);
 
 % prepare the QP
 %   variables: [free_force, dual_free_force, eta_af]
-n_free = kDimLambda + kDimUnActualized + n_av;
+n_free = kDimContactForce + kDimUnActualized + n_av;
 n_dual_free = size(M_newton, 1);
 % 0.5 x'Qx + f'x
 qp.Q = diag([zeros(1, n_free + n_dual_free), ones(1, n_af)]);
 qp.f = zeros(n_free + n_dual_free + n_af, 1);
 % Ax<b
-A_temp = [A(:, 1:kDimLambda), A(:, kDimLambda+1:end)*T_inv];
-A_lambda_eta_u = A_temp(:, 1:kDimLambda+kDimUnActualized);
-A_eta_af = A_temp(:, kDimLambda+kDimUnActualized+1:kDimLambda+kDimUnActualized+n_af);
-A_eta_av = A_temp(:, kDimLambda+kDimUnActualized+n_af+1:end);
+A_temp = [A(:, 1:kDimContactForce), A(:, kDimContactForce+1:end)*T_inv];
+A_lambda_eta_u = A_temp(:, 1:kDimContactForce+kDimUnActualized);
+A_eta_af = A_temp(:, kDimContactForce+kDimUnActualized+1:kDimContactForce+kDimUnActualized+n_af);
+A_eta_av = A_temp(:, kDimContactForce+kDimUnActualized+n_af+1:end);
 
 qp.A = [A_lambda_eta_u A_eta_av zeros(size(A, 1), n_dual_free) A_eta_af];
 qp.b = b_A;
