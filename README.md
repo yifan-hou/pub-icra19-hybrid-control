@@ -4,5 +4,3 @@ A package for computing hybrid force-velocity control actions to execute a conta
 ## Contents
 * */algorithm/solvehfvc.m* Implementation of the algorithm.
 * */examples/* Three examples of contact-rich manipulation problems.
-
-
